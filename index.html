@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>SAKE DIPLOMA 学習アプリ</title>
+
+  <!-- PWA Meta Tags -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="SAKE DIPLOMA">
+  <meta name="theme-color" content="#1e293b">
+  <link rel="apple-touch-icon" href="https://via.placeholder.com/192/1e293b/ffffff?text=SAKE">
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- PapaParse for CSV handling -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+
+  <style>
+    /* 赤シート機能用スタイル */
+    .red-mask {
+      background-color: #ef4444;
+      color: #ef4444;
+      border-radius: 0.25rem;
+      padding: 0 0.25rem;
+      cursor: pointer;
+      user-select: none;
+      transition: all 0.2s ease;
+      display: inline-block;
+      font-weight: bold;
+    }
+    .red-mask.revealed {
+      background-color: #fee2e2;
+      color: #dc2626;
+    }
+    /* スマホ向けタップ領域最適化 */
+    button, input, select {
+      touch-action: manipulation;
+    }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 font-sans min-h-screen pb-12">
+
+  <!-- Header -->
+  <header class="sticky top-0 z-50 bg-slate-900 text-white shadow-md">
+    <div class="max-w-md mx-auto px-4 py-3 flex justify-between items-center">
+      <h1 class="text-lg font-bold tracking-wider text-amber-400">SAKE DIPLOMA</h1>
+      <nav class="flex gap-2">
+        <button id="nav-textbook" onclick="switchTab('textbook')" class="px-3 py-1.5 rounded-lg text-sm font-semibold transition bg-amber-500 text-slate-900 shadow">
+          教科書
+        </button>
+        <button id="nav-quiz" onclick="switchTab('quiz')" class="px-3 py-1.5 rounded-lg text-sm font-semibold transition bg-slate-800 text-slate-300 hover:text-white">
+          クイズ
+        </button>
+      </nav>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="max-w-md mx-auto p-4">
+
+    <!-- Loading Indicator -->
+    <div id="loading" class="flex flex-col items-center justify-center my-12 gap-3">
+      <div class="w-8 h-8 border-4 border-amber-500 border-t-transparent rounded-full animate-spin"></div>
+      <p class="text-sm text-slate-500">データを読み込み中...</p>
+    </div>
+
+    <!-- ==================== 教科書モード ==================== -->
+    <section id="sec-textbook" class="hidden space-y-4">
+      <!-- 検索・フィルター -->
+      <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 space-y-3">
+        <div>
+          <label class="block text-xs font-bold text-slate-500 mb-1">分野絞り込み</label>
+          <select id="tb-category" onchange="filterTextbook()" class="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-500">
+            <option value="">すべての分野</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs font-bold text-slate-500 mb-1">フリーワード検索</label>
+          <input type="text" id="tb-search" oninput="filterTextbook()" placeholder="キーワードを入力..." class="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-500">
+        </div>
+        <div class="flex justify-between items-center pt-1 text-xs text-slate-500">
+          <span>※赤字をタップすると表示/非表示</span>
+          <button onclick="toggleAllRedMasks()" class="text-amber-600 font-bold hover:underline">一括開閉</button>
+        </div>
+      </div>
+
+      <!-- 教科書コンテンツ一覧 -->
+      <div id="tb-list" class="space-y-4"></div>
+    </section>
+
+
+    <!-- ==================== クイズモード ==================== -->
+    <section id="sec-quiz" class="hidden space-y-4">
+      <!-- クイズ設定・モード切り替え -->
+      <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 space-y-3">
+        <div class="flex gap-2">
+          <button id="btn-mode-all" onclick="setQuizMode('all')" class="flex-1 py-2 rounded-lg text-xs font-bold border transition bg-amber-500 border-amber-500 text-slate-900 shadow-sm">
+            通常モード
+          </button>
+          <button id="btn-mode-review" onclick="setQuizMode('review')" class="flex-1 py-2 rounded-lg text-xs font-bold border border-slate-300 text-slate-600 bg-slate-50">
+            要復習のみ (<span id="review-count">0</span>)
+          </button>
+        </div>
+        
+        <div id="quiz-cat-wrapper">
+          <label class="block text-xs font-bold text-slate-500 mb-1">出題分野</label>
+          <select id="quiz-category" onchange="initQuiz()" class="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-500">
+            <option value="">すべての分野</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- クイズカード -->
+      <div id="quiz-card" class="bg-white p-5 rounded-xl shadow-sm border border-slate-200 space-y-4">
+        <!-- プログレス・カテゴリ -->
+        <div class="flex justify-between items-center border-b pb-2 text-xs text-slate-500">
+          <span id="quiz-cat-label" class="font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded">カテゴリ</span>
+          <span id="quiz-progress" class="font-semibold">0 / 0</span>
+        </div>
+
+        <!-- 問題文 -->
+        <div id="quiz-question" class="text-base font-bold text-slate-800 leading-relaxed min-h-[3rem]">
+          問題文がここに表示されます。
+        </div>
+
+        <!-- 選択肢 -->
+        <div id="quiz-options" class="space-y-2.5 pt-2">
+          <!-- 選択肢ボタンが動的に挿入されます -->
+        </div>
+
+        <!-- 解答・解説エリア (初期状態は非表示) -->
+        <div id="quiz-explanation-box" class="hidden space-y-3 pt-3 border-t">
+          <div id="quiz-result" class="text-center font-bold text-lg"></div>
+          <div class="bg-slate-50 p-3 rounded-lg border text-sm space-y-1">
+            <div class="font-bold text-xs text-slate-400">【正解】<span id="quiz-correct-ans" class="text-slate-800"></span></div>
+            <div class="font-bold text-xs text-slate-400 mt-1">【解説】</div>
+            <div id="quiz-explanation-text" class="text-slate-700 leading-relaxed"></div>
+          </div>
+        </div>
+
+        <!-- 下部アクションボタン -->
+        <div class="flex justify-between items-center pt-2 border-t">
+          <label class="flex items-center gap-2 cursor-pointer text-sm font-semibold text-slate-600">
+            <input type="checkbox" id="quiz-review-checkbox" onchange="toggleReviewCurrentQuestion()" class="w-5 h-5 rounded text-amber-500 focus:ring-amber-500">
+            要復習に登録
+          </label>
+          <button id="btn-next-quiz" onclick="nextQuestion()" class="px-5 py-2.5 bg-slate-900 text-white rounded-lg text-sm font-bold shadow hover:bg-slate-800 transition">
+            次の問題 ➔
+          </button>
+        </div>
+      </div>
+
+      <!-- 該当なし表示 -->
+      <div id="quiz-empty" class="hidden bg-white p-8 rounded-xl shadow-sm border border-slate-200 text-center space-y-2">
+        <p class="text-slate-500 font-semibold">該当する問題がありません。</p>
+        <p class="text-xs text-slate-400">「要復習」にチェックした問題がないか、選択した分野に問題が存在しません。</p>
+      </div>
+    </section>
+
+  </main>
+
+  <script>
+    // CSV URLs
+    const URL_TEXTBOOK = "https://docs.google.com/spreadsheets/d/e/2PACX-1vT8STNnis4U7viSaHh2wTOCfjaQecGRzq0tvGjz3wHRKlT0xP-gByZXnairONy-F2updDLJBsqQlf62/pub?gid=0&single=true&output=csv";
+    const URL_QUIZ = "https://docs.google.com/spreadsheets/d/e/2PACX-1vT8STNnis4U7viSaHh2wTOCfjaQecGRzq0tvGjz3wHRKlT0xP-gByZXnairONy-F2updDLJBsqQlf62/pub?gid=1389170330&single=true&output=csv";
+
+    // Application State
+    let textbookData = [];
+    let quizData = [];
+    let reviewIds = JSON.parse(localStorage.getItem('sake_review_ids') || '[]');
+    
+    let currentQuizList = [];
+    let currentQuizIndex = 0;
+    let currentQuizMode = 'all'; // 'all' or 'review'
+
+    // Initialize App
+    window.addEventListener('DOMContentLoaded', async () => {
+      await loadData();
+      updateReviewCount();
+      initCategoryDropdowns();
+      filterTextbook();
+      initQuiz();
+      switchTab('textbook');
+      document.getElementById('loading').classList.add('hidden');
+    });
+
+    // Load Data using PapaParse
+    async function loadData() {
+      const fetchData = (url) => new Promise((resolve) => {
+        Papa.parse(url, {
+          download: true,
+          header: true,
+          skipEmptyLines: true,
+          complete: (results) => resolve(results.data)
+        });
+      });
+
+      try {
+        const [tbRes, qRes] = await Promise.all([fetchData(URL_TEXTBOOK), fetchData(URL_QUIZ)]);
+        textbookData = tbRes;
+        quizData = qRes;
+      } catch (err) {
+        alert("データの読み込みに失敗しました。通信環境をご確認ください。");
+        console.error(err);
+      }
+    }
+
+    // Switch Tabs
+    function switchTab(tab) {
+      const tbSec = document.getElementById('sec-textbook');
+      const quizSec = document.getElementById('sec-quiz');
+      const tbBtn = document.getElementById('nav-textbook');
+      const quizBtn = document.getElementById('nav-quiz');
+
+      if (tab === 'textbook') {
+        tbSec.classList.remove('hidden');
+        quizSec.classList.add('hidden');
+        tbBtn.className = "px-3 py-1.5 rounded-lg text-sm font-semibold transition bg-amber-500 text-slate-900 shadow";
+        quizBtn.className = "px-3 py-1.5 rounded-lg text-sm font-semibold transition bg-slate-800 text-slate-300 hover:text-white";
+      } else {
+        tbSec.classList.add('hidden');
+        quizSec.classList.remove('hidden');
+        quizBtn.className = "px-3 py-1.5 rounded-lg text-sm font-semibold transition bg-amber-500 text-slate-900 shadow";
+        tbBtn.className = "px-3 py-1.5 rounded-lg text-sm font-semibold transition bg-slate-800 text-slate-300 hover:text-white";
+      }
+    }
+
+    // Initialize Category Dropdowns
+    function initCategoryDropdowns() {
+      const categories = [...new Set([
+        ...textbookData.map(item => item.分野 || item.category).filter(Boolean),
+        ...quizData.map(item => item.分野 || item.category).filter(Boolean)
+      ])];
+
+      const tbSelect = document.getElementById('tb-category');
+      const quizSelect = document.getElementById('quiz-category');
+
+      categories.forEach(cat => {
+        tbSelect.appendChild(new Option(cat, cat));
+        quizSelect.appendChild(new Option(cat, cat));
+      });
+    }
+
+    /* ==================== 教科書モード Functions ==================== */
+    function filterTextbook() {
+      const category = document.getElementById('tb-category').value;
+      const keyword = document.getElementById('tb-search').value.toLowerCase();
+      const listContainer = document.getElementById('tb-list');
+
+      listContainer.innerHTML = '';
+
+      const filtered = textbookData.filter(item => {
+        const catMatch = !category || (item.分野 || item.category) === category;
+        const textContent = (item.テーマ || '') + (item.本文 || '') + (item.title || '') + (item.content || '');
+        const keyMatch = !keyword || textContent.toLowerCase().includes(keyword);
+        return catMatch && keyMatch;
+      });
+
+      if (filtered.length === 0) {
+        listContainer.innerHTML = `<div class="text-center py-8 text-slate-400 text-sm">該当する教科書データがありません</div>`;
+        return;
+      }
+
+      filtered.forEach(item => {
+        const title = item.テーマ || item.title || '無題';
+        const rawContent = item.本文 || item.content || '';
+        const cat = item.分野 || item.category || '全般';
+
+        // Format {{ text }} into 赤シート html
+        const formattedContent = rawContent.replace(/\{\{(.*?)\}\}/g, '<span class="red-mask" onclick="toggleRedMask(this)">$1</span>');
+
+        const card = document.createElement('div');
+        card.className = "bg-white p-5 rounded-xl shadow-sm border border-slate-200 space-y-3";
+        card.innerHTML = `
+          <div class="flex justify-between items-start gap-2">
+            <h2 class="font-bold text-slate-900 text-base leading-snug">${title}</h2>
+            <span class="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded whitespace-nowrap">${cat}</span>
+          </div>
+          <div class="text-sm text-slate-700 leading-relaxed">${formattedContent}</div>
+          <div class="pt-2 border-t flex justify-end">
+            <button onclick="startQuizFromTheme('${cat}')" class="text-xs font-bold text-amber-600 bg-amber-50 hover:bg-amber-100 px-3 py-2 rounded-lg transition border border-amber-200">
+              このテーマのクイズを解く ➔
+            </button>
+          </div>
+        `;
+        listContainer.appendChild(card);
+      });
+    }
+
+    function toggleRedMask(el) {
+      el.classList.toggle('revealed');
+    }
+
+    function toggleAllRedMasks() {
+      const masks = document.querySelectorAll('.red-mask');
+      const anyHidden = Array.from(masks).some(m => !m.classList.contains('revealed'));
+      masks.forEach(m => {
+        if (anyHidden) m.classList.add('revealed');
+        else m.classList.remove('revealed');
+      });
+    }
+
+    function startQuizFromTheme(category) {
+      switchTab('quiz');
+      document.getElementById('quiz-category').value = category;
+      setQuizMode('all');
+      initQuiz();
+    }
+
+    /* ==================== クイズモード Functions ==================== */
+    function setQuizMode(mode) {
+      currentQuizMode = mode;
+      const btnAll = document.getElementById('btn-mode-all');
+      const btnReview = document.getElementById('btn-mode-review');
+      const catWrapper = document.getElementById('quiz-cat-wrapper');
+
+      if (mode === 'all') {
+        btnAll.className = "flex-1 py-2 rounded-lg text-xs font-bold border transition bg-amber-500 border-amber-500 text-slate-900 shadow-sm";
+        btnReview.className = "flex-1 py-2 rounded-lg text-xs font-bold border border-slate-300 text-slate-600 bg-slate-50";
+        catWrapper.classList.remove('hidden');
+      } else {
+        btnReview.className = "flex-1 py-2 rounded-lg text-xs font-bold border transition bg-amber-500 border-amber-500 text-slate-900 shadow-sm";
+        btnAll.className = "flex-1 py-2 rounded-lg text-xs font-bold border border-slate-300 text-slate-600 bg-slate-50";
+        catWrapper.classList.add('hidden');
+      }
+      initQuiz();
+    }
+
+    function initQuiz() {
+      const category = document.getElementById('quiz-category').value;
+
+      currentQuizList = quizData.filter((item, idx) => {
+        const id = item.id || String(idx);
+        const catMatch = currentQuizMode === 'review' || !category || (item.分野 || item.category) === category;
+        const reviewMatch = currentQuizMode === 'all' || reviewIds.includes(id);
+        return catMatch && reviewMatch;
+      });
+
+      currentQuizIndex = 0;
+      renderQuestion();
+    }
+
+    function renderQuestion() {
+      const card = document.getElementById('quiz-card');
+      const empty = document.getElementById('quiz-empty');
+
+      if (currentQuizList.length === 0) {
+        card.classList.add('hidden');
+        empty.classList.remove('hidden');
+        return;
+      }
+
+      card.classList.remove('hidden');
+      empty.classList.add('hidden');
+
+      const q = currentQuizList[currentQuizIndex];
+      const qId = q.id || String(quizData.indexOf(q));
+
+      // DOM要素アップデート
+      document.getElementById('quiz-cat-label').textContent = q.分野 || q.category || '全般';
+      document.getElementById('quiz-progress').textContent = `${currentQuizIndex + 1} / ${currentQuizList.length}`;
+      document.getElementById('quiz-question').textContent = q.問題 || q.question || '';
+
+      // 解説ボックスの初期化
+      const expBox = document.getElementById('quiz-explanation-box');
+      expBox.classList.add('hidden');
+
+      // チェックボックス設定
+      document.getElementById('quiz-review-checkbox').checked = reviewIds.includes(qId);
+
+      // 選択肢レンダリング
+      const optionsContainer = document.getElementById('quiz-options');
+      optionsContainer.innerHTML = '';
+
+      const keys = ['A', 'B', 'C', 'D'];
+      keys.forEach(key => {
+        const optionText = q[`選択肢${key}`] || q[`option${key}`] || q[key];
+        if (!optionText) return;
+
+        const btn = document.createElement('button');
+        btn.className = "w-full text-left p-3.5 rounded-lg border border-slate-200 bg-slate-50 text-slate-800 text-sm font-semibold hover:bg-slate-100 active:bg-slate-200 transition flex items-center gap-3";
+        btn.onclick = () => checkAnswer(key, btn);
+        btn.innerHTML = `
+          <span class="w-6 h-6 rounded-full bg-slate-200 text-slate-600 flex items-center justify-center text-xs font-bold flex-shrink-0">${key}</span>
+          <span class="flex-1">${optionText}</span>
+        `;
+        optionsContainer.appendChild(btn);
+      });
+    }
+
+    function checkAnswer(selectedKey, selectedBtn) {
+      const q = currentQuizList[currentQuizIndex];
+      const correctAns = (q.正解 || q.answer || '').toString().trim().toUpperCase();
+
+      const optionsContainer = document.getElementById('quiz-options');
+      const buttons = optionsContainer.querySelectorAll('button');
+      
+      // 全ボタンを無効化
+      buttons.forEach(btn => btn.disabled = true);
+
+      const isCorrect = selectedKey === correctAns;
+
+      // デザイン変更
+      if (isCorrect) {
+        selectedBtn.classList.remove('bg-slate-50', 'border-slate-200');
+        selectedBtn.classList.add('bg-emerald-50', 'border-emerald-500', 'text-emerald-900');
+        selectedBtn.querySelector('span').classList.add('bg-emerald-500', 'text-white');
+      } else {
+        selectedBtn.classList.remove('bg-slate-50', 'border-slate-200');
+        selectedBtn.classList.add('bg-rose-50', 'border-rose-500', 'text-rose-900');
+        selectedBtn.querySelector('span').classList.add('bg-rose-500', 'text-white');
+
+        // 正解のボタンをハイライト
+        const keys = ['A', 'B', 'C', 'D'];
+        const correctIndex = keys.indexOf(correctAns);
+        if (correctIndex !== -1 && buttons[correctIndex]) {
+          buttons[correctIndex].classList.remove('bg-slate-50', 'border-slate-200');
+          buttons[correctIndex].classList.add('bg-emerald-50', 'border-emerald-500', 'text-emerald-900');
+        }
+      }
+
+      // 正誤表示・解説表示
+      const expBox = document.getElementById('quiz-explanation-box');
+      const resText = document.getElementById('quiz-result');
+      const correctAnsText = document.getElementById('quiz-correct-ans');
+      const expText = document.getElementById('quiz-explanation-text');
+
+      resText.textContent = isCorrect ? "🎉 正解！" : "❌ 不正解...";
+      resText.className = `text-center font-bold text-lg ${isCorrect ? 'text-emerald-600' : 'text-rose-600'}`;
+      
+      const targetOptionText = q[`選択肢${correctAns}`] || q[`option${correctAns}`] || q[correctAns] || correctAns;
+      correctAnsText.textContent = `${correctAns}: ${targetOptionText}`;
+      expText.textContent = q.解説 || q.explanation || '解説はありません。';
+
+      expBox.classList.remove('hidden');
+    }
+
+    function nextQuestion() {
+      if (currentQuizIndex < currentQuizList.length - 1) {
+        currentQuizIndex++;
+        renderQuestion();
+      } else {
+        alert("最後の問題です！お疲れ様でした。");
+      }
+    }
+
+    function toggleReviewCurrentQuestion() {
+      if (currentQuizList.length === 0) return;
+      const q = currentQuizList[currentQuizIndex];
+      const qId = q.id || String(quizData.indexOf(q));
+
+      const isChecked = document.getElementById('quiz-review-checkbox').checked;
+
+      if (isChecked) {
+        if (!reviewIds.includes(qId)) reviewIds.push(qId);
+      } else {
+        reviewIds = reviewIds.filter(id => id !== qId);
+      }
+
+      localStorage.setItem('sake_review_ids', JSON.stringify(reviewIds));
+      updateReviewCount();
+    }
+
+    function updateReviewCount() {
+      document.getElementById('review-count').textContent = reviewIds.length;
+    }
+  </script>
+</body>
+</html>
