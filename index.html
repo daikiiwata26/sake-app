@@ -163,6 +163,11 @@
             <div class="font-bold text-xs text-slate-400 mt-1">【解説】</div>
             <div id="quiz-explanation-text" class="text-slate-700 leading-relaxed"></div>
           </div>
+          <div class="text-center">
+            <button id="btn-view-textbook" class="hidden text-xs font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition border border-blue-200">
+              📖 教科書のこの単元を見る
+            </button>
+          </div>
         </div>
 
         <!-- 下部アクションボタン -->
@@ -171,9 +176,12 @@
             <input type="checkbox" id="quiz-review-checkbox" onchange="toggleReviewCurrentQuestion()" class="w-5 h-5 rounded text-amber-500 focus:ring-amber-500">
             要復習に登録
           </label>
-          <button id="btn-next-quiz" onclick="nextQuestion()" class="px-5 py-2.5 bg-slate-900 text-white rounded-lg text-sm font-bold shadow hover:bg-slate-800 transition">
-            次の問題 ➔
-          </button>
+          <div class="flex flex-col items-end gap-1">
+            <button id="btn-next-quiz" onclick="nextQuestion()" class="px-5 py-2.5 bg-slate-900 text-white rounded-lg text-sm font-bold shadow hover:bg-slate-800 transition">
+              次の問題 ➔
+            </button>
+            <span id="quiz-category-count" class="text-[10px] text-slate-400"></span>
+          </div>
         </div>
       </div>
 
@@ -353,6 +361,7 @@
 
         const card = document.createElement('div');
         card.className = "bg-white p-5 rounded-xl shadow-sm border border-slate-200 space-y-3";
+        card.dataset.theme = title;
         card.innerHTML = `
           <div class="flex justify-between items-start gap-2">
             <h2 class="font-bold text-slate-900 text-base leading-snug">${title}</h2>
@@ -412,6 +421,27 @@
       document.getElementById('quiz-only-understood').checked = false;
       setQuizMode('all');
       startQuizSession();
+    }
+
+    function goToTextbookTheme(themeTitle) {
+      if (!themeTitle) return;
+      const item = textbookData.find(i => (i.テーマ || i.title) === themeTitle);
+
+      switchTab('textbook');
+      document.getElementById('tb-category').value = item ? (item.分野 || item.category || '') : '';
+      document.getElementById('tb-search').value = '';
+      currentChapter = '';
+      renderChapterTabs();
+      filterTextbook();
+
+      setTimeout(() => {
+        const target = document.querySelector(`#tb-list > div[data-theme="${CSS.escape(themeTitle)}"]`);
+        if (target) {
+          target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          target.classList.add('ring-2', 'ring-amber-400');
+          setTimeout(() => target.classList.remove('ring-2', 'ring-amber-400'), 2000);
+        }
+      }, 50);
     }
 
     /* ==================== クイズモード ==================== */
@@ -491,9 +521,14 @@
       const q = currentQuizList[currentQuizIndex];
       const qId = q.id || String(quizData.indexOf(q));
 
-      document.getElementById('quiz-cat-label').textContent = q.分野 || q.category || '全般';
+      const qCategory = q.分野 || q.category || '全般';
+      document.getElementById('quiz-cat-label').textContent = qCategory;
       document.getElementById('quiz-progress').textContent = `${currentQuizIndex + 1} / ${currentQuizList.length}`;
       document.getElementById('quiz-question').textContent = q.問題 || q.question || '';
+
+      // この分野の総問題数を表示（教科書から来た場合、他にも問題があるか一目でわかるように）
+      const categoryTotal = quizData.filter(i => (i.分野 || i.category) === qCategory).length;
+      document.getElementById('quiz-category-count').textContent = `「${qCategory}」の問題は全${categoryTotal}問`;
 
       // 正解数の統計表示
       const stat = quizStats[qId] || { correct: 0, wrong: 0 };
@@ -501,6 +536,17 @@
 
       document.getElementById('quiz-explanation-box').classList.add('hidden');
       document.getElementById('quiz-review-checkbox').checked = reviewIds.includes(qId);
+
+      // 教科書のこの単元へ戻るリンク
+      const theme = q.テーマ || q.theme || '';
+      const viewTextbookBtn = document.getElementById('btn-view-textbook');
+      if (theme && textbookData.some(i => (i.テーマ || i.title) === theme)) {
+        viewTextbookBtn.classList.remove('hidden');
+        viewTextbookBtn.onclick = () => goToTextbookTheme(theme);
+      } else {
+        viewTextbookBtn.classList.add('hidden');
+        viewTextbookBtn.onclick = null;
+      }
 
       const optionsContainer = document.getElementById('quiz-options');
       optionsContainer.innerHTML = '';
