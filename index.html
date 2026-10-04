@@ -67,6 +67,9 @@
 
     <!-- ==================== 教科書モード ==================== -->
     <section id="sec-textbook" class="hidden space-y-4">
+      <!-- 科目タブ（修了度） -->
+      <div id="tb-chapter-tabs" class="flex gap-2 overflow-x-auto pb-1"></div>
+
       <!-- 検索・フィルター -->
       <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 space-y-3">
         <div>
@@ -203,7 +206,20 @@
 
     let textbookData = [];
     let quizData = [];
-    
+
+    // SAKE DIPLOMA 公式教本（第4版）の7科目
+    const CHAPTERS = [
+      { key: '', emoji: '📚', label: 'すべて' },
+      { key: '日本酒とは', emoji: '📖', label: '基礎' },
+      { key: '日本酒の醸造方法と種類', emoji: '🧪', label: '醸造' },
+      { key: '主要生産地のプロフィール', emoji: '🗾', label: '産地' },
+      { key: '日本酒のテイスティング', emoji: '👃', label: 'きき酒' },
+      { key: '日本酒のサービス', emoji: '🍽️', label: 'サービス' },
+      { key: '日本酒と料理の相性', emoji: '🍱', label: '料理' },
+      { key: '焼酎', emoji: '🥃', label: '焼酎' },
+    ];
+    let currentChapter = '';
+
     // LocalStorage States
     let reviewIds = JSON.parse(localStorage.getItem('sake_review_ids') || '[]');
     let understoodThemes = JSON.parse(localStorage.getItem('sake_understood_themes') || '[]');
@@ -219,7 +235,9 @@
       await loadData();
       updateReviewCount();
       initCategoryDropdowns();
+      renderChapterTabs();
       filterTextbook();
+      switchTab('textbook');
       document.getElementById('loading').classList.add('hidden');
     });
 
@@ -278,6 +296,32 @@
     }
 
     /* ==================== 教科書モード ==================== */
+    function renderChapterTabs() {
+      const container = document.getElementById('tb-chapter-tabs');
+      container.innerHTML = '';
+
+      CHAPTERS.forEach(ch => {
+        const items = ch.key ? textbookData.filter(i => (i.chapter || '') === ch.key) : textbookData;
+        const total = items.length;
+        const done = items.filter(i => understoodThemes.includes(i.テーマ || i.title)).length;
+        const isActive = currentChapter === ch.key;
+
+        const btn = document.createElement('button');
+        btn.className = `flex-shrink-0 px-3 py-2 rounded-lg text-xs font-bold border transition ${
+          isActive
+            ? 'bg-amber-500 border-amber-500 text-slate-900 shadow-sm'
+            : 'bg-white border-slate-200 text-slate-600'
+        }`;
+        btn.innerHTML = `${ch.emoji}${ch.label}<span class="ml-1 ${isActive ? 'text-slate-800' : 'text-slate-400'}">(${done}/${total})</span>`;
+        btn.onclick = () => {
+          currentChapter = ch.key;
+          renderChapterTabs();
+          filterTextbook();
+        };
+        container.appendChild(btn);
+      });
+    }
+
     function filterTextbook() {
       const category = document.getElementById('tb-category').value;
       const keyword = document.getElementById('tb-search').value.toLowerCase();
@@ -287,9 +331,10 @@
 
       const filtered = textbookData.filter(item => {
         const catMatch = !category || (item.分野 || item.category) === category;
+        const chapterMatch = !currentChapter || (item.chapter || '') === currentChapter;
         const textContent = (item.テーマ || '') + (item.本文 || '') + (item.title || '') + (item.content || '');
         const keyMatch = !keyword || textContent.toLowerCase().includes(keyword);
-        return catMatch && keyMatch;
+        return catMatch && chapterMatch && keyMatch;
       });
 
       if (filtered.length === 0) {
@@ -357,6 +402,7 @@
         understoodThemes = understoodThemes.filter(t => t !== themeTitle);
       }
       localStorage.setItem('sake_understood_themes', JSON.stringify(understoodThemes));
+      renderChapterTabs();
       filterTextbook();
     }
 
